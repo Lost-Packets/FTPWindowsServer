@@ -58,9 +58,13 @@ int main(int argc, char *argv[]){
     SOCKET s, ns;
     SOCKET ns_data, s_data_act;
     char clientHost[NI_MAXHOST], clientService[NI_MAXSERV], portNum[NI_MAXSERV];
-    char userName[80], password[80], send_buffer[80], receive_buffer[80];
+    char send_buffer[80], receive_buffer[80];
     int n, bytes, addrlen, err, active = 0;
-    bool IPV6_active;
+    bool IPV6_active = true;
+
+    // Ignore for now
+    char const *userName = "napoleon";
+    char const *password = "342";
 
     // WSSTARTUP
     err = WSAStartup(WSVERS, &wsadata);
@@ -81,11 +85,22 @@ int main(int argc, char *argv[]){
     // Socket Address Structures
     struct addrinfo *result = NULL;
     struct addrinfo hints;
-    struct addrinfo local_data_addr_act;
-    int iResult;
+    //struct addrinfo local_data_addr_act;
+    struct sockaddr_in local_data_addr_act;
 
-    //
+    int iResult;
     memset(&hints, 0, sizeof(addrinfo));
+
+    // IP Vesrion Switch
+    if(argc == 3){
+        if(strcmp(argv[2], "IPV6" ) == 0){
+            IPV6_active = true;
+            cout << "IPV6 Active" << endl;
+        }else{
+            IPV6_active = false;
+            cout << "IPV4 Active" << endl;
+        }
+    }
 
     // Set IPV6 or IPV4
     if(IPV6_active == true){
@@ -95,10 +110,10 @@ int main(int argc, char *argv[]){
     }
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
-    hints.ai_flags = AI_PASSIVE;
+    hints.ai_flags = AI_NUMERICHOST | AI_PASSIVE;
 
     // Resolve the local address and port to be used by the server
-    if(argc == 2){
+    if(argc == 3){
         iResult = getaddrinfo(NULL, argv[1], &hints, &result);
         sprintf(portNum, "%s", argv[1]);
     }else{
@@ -156,115 +171,121 @@ int main(int argc, char *argv[]){
         // Communication
         while(true){
             while(true){
-                n = 0;
-                while(true){
-                    bytes = recv(ns, &receive_buffer[n], 1, 0);
-                    if((bytes < 0) || (bytes == 0)) break;
-                    if(receive_buffer[n] == '\n'){
-                            receive_buffer[n] = '\0';
-                            break;
-                    }
-                    if(receive_buffer[n] != '\r') n++; 
-                    }
-                    if(bytes == 0) printf("\nclient has gracefully exited.\n");
-                    if((bytes < 0) || (bytes == 0)) break;
-                    printf("<< DEBUG INFO. >>: the message from the CLIENT reads: '%s\\r\\n' \n", receive_buffer);
+				n = 0;
+				while(true){
+					bytes = recv(ns, &receive_buffer[n], 1, 0);
+					if((bytes < 0) || (bytes == 0)) break;
+					if(receive_buffer[n] == '\n'){
+						receive_buffer[n] = '\0';
+						break;
+					}
+					if(receive_buffer[n] != '\r') n++; 
+				}
+				if((bytes < 0) || (bytes == 0)) break;
+				printf("<< DEBUG INFO. >>: the message from the CLIENT reads: '%s\\r\\n' \n", receive_buffer);
 
-                    if(strncmp(receive_buffer,"USER",4)==0){
-                            printf("Logging in... \n");
-                            sprintf(send_buffer,"331 Password required (anything will do really... :-) \r\n");
-                            bytes = send(ns, send_buffer, strlen(send_buffer), 0);
-                            if(bytes < 0) break;
-                    }
-                    if(strncmp(receive_buffer,"PASS",4)==0) {
-                            sprintf(send_buffer,"230 Public login sucessful \r\n");
-                            printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
-                            bytes = send(ns, send_buffer, strlen(send_buffer), 0);
-                            if(bytes < 0) break;
-                    }
-                    if(strncmp(receive_buffer,"SYST",4)==0){
-                            printf("Information about the system \n");
-                            sprintf(send_buffer,"215 Windows 64-bit\r\n");
-                            printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
-                            bytes = send(ns, send_buffer, strlen(send_buffer), 0);
-                            if(bytes < 0) break;
-                    }
-                    if(strncmp(receive_buffer,"OPTS",4)==0){
-                            printf("unrecognised command \n");
-                            sprintf(send_buffer,"502 command not implemented\r\n");
-                            printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
-                            bytes = send(ns, send_buffer, strlen(send_buffer), 0);
-                            if(bytes < 0) break;
-                    }
-                    if(strncmp(receive_buffer,"QUIT",4)==0){
-                            printf("Quit \n");
-                            sprintf(send_buffer,"221 Connection close by client\r\n");
-                            printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
-                            bytes = send(ns, send_buffer, strlen(send_buffer), 0);
-                            if (bytes < 0) break;
-                            // closesocket(ns);
-                    }
-                    if(strncmp(receive_buffer,"PORT",4)==0){
-                            /*s_data_act = socket(AF_INET6, SOCK_STREAM, 0);
-                            //local variables
-                            int act_port[2];
-                            int act_ip[4], port_dec;
-                            char ip_decimal[40];
-                            printf("===================================================\n");
-                            printf("\n\tActive FTP mode, the client is listening... \n");
-                            active=1;
-                            int scannedItems = sscanf(receive_buffer, "PORT %d,%d,%d,%d,%d,%d", &act_ip[0],&act_ip[1],&act_ip[2],&act_ip[3], &act_port[0],&act_port[1]);
-                            if(scannedItems < 6){
-                                    sprintf(send_buffer,"501 Syntax error in arguments \r\n");
-                                    printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
-                                    bytes = send(ns, send_buffer, strlen(send_buffer), 0);
-                                    break;
-                            }
-                            local_data_addr_act.ai_family=AF_INET6;//local_data_addr_act  //ipv4 only // ipv6 now
-                            sprintf(ip_decimal, "%d.%d.%d.%d", act_ip[0], act_ip[1], act_ip[2],act_ip[3]);
-                            printf("\tCLIENT's IP is %s\n",ip_decimal);  //IPv4 format
-                            local_data_addr_act.ai_addr.s_addr=inet_addr(ip_decimal);  //ipv4 only
-                            port_dec=act_port[0];
-                            port_dec=port_dec << 8;
-                            port_dec=port_dec+act_port[1];
-                            printf("\tCLIENT's Port is %d\n",port_dec);
-                            printf("===================================================\n");
-                            local_data_addr_act.sin_port=htons(port_dec); //ipv4 only
-                            if(connect(s_data_act, (struct sockaddr *)&local_data_addr_act, (int) sizeof(struct sockaddr)) != 0){
-                            printf("trying connection in %s %d\n",inet_ntoa(local_data_addr_act.sin_addr),ntohs(local_data_addr_act.sin_port));
-                                    sprintf(send_buffer, "425 Something is wrong, can't start active connection... \r\n");
-                                    bytes = send(ns, send_buffer, strlen(send_buffer), 0);
-                                    printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
-                                    closesocket(s_data_act);
-                            }else{
-                                    sprintf(send_buffer, "200 PORT Command successful\r\n");
-                                    bytes = send(ns, send_buffer, strlen(send_buffer), 0);
-                                    printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
-                                    printf("Connected to client\n");
-                            }
-                        */
-                    }
-                    if((strncmp(receive_buffer,"LIST",4)==0) || (strncmp(receive_buffer,"NLST",4)==0)){
-                            system("dir > tmp.txt");
-                            FILE *fin=fopen("tmp.txt","r");
-                            sprintf(send_buffer,"150 Opening ASCII mode data connection... \r\n");
-                            printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
-                            bytes = send(ns, send_buffer, strlen(send_buffer), 0);
-                            char temp_buffer[80];
-                            while(!feof(fin)){
-                                    fgets(temp_buffer,78,fin);
-                                    sprintf(send_buffer,"%s",temp_buffer);
-                                    if (active==0) send(ns_data, send_buffer, strlen(send_buffer), 0);
-                                    else send(s_data_act, send_buffer, strlen(send_buffer), 0);
-                            }
-                            fclose(fin);
-                            sprintf(send_buffer,"226 File transfer complete. \r\n");
-                            printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
-                            bytes = send(ns, send_buffer, strlen(send_buffer), 0);
-                            if(active==0 )closesocket(ns_data);
-                            else closesocket(s_data_act);
-                            system("del tmp.txt");
-                    }
+				if(strncmp(receive_buffer,"USER",4)==0){
+					printf("Logging in... \n");
+					sprintf(send_buffer,"331 Password required (anything will do really... :-) \r\n");
+					bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+					if(bytes < 0) break;
+				}
+				if(strncmp(receive_buffer,"PASS",4)==0) {
+					sprintf(send_buffer,"230 Public login sucessful \r\n");
+					printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+					bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+					if(bytes < 0) break;
+				}
+				if(strncmp(receive_buffer,"SYST",4)==0){
+					printf("Information about the system \n");
+					sprintf(send_buffer,"215 Windows 64-bit\r\n");
+					printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+					bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+					if(bytes < 0) break;
+				}
+				if(strncmp(receive_buffer,"OPTS",4)==0){
+					printf("unrecognised command \n");
+					sprintf(send_buffer,"502 command not implemented\r\n");
+					printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+					bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+					if(bytes < 0) break;
+				}
+				if(strncmp(receive_buffer,"QUIT",4)==0){
+					printf("Quit \n");
+					sprintf(send_buffer,"221 Connection close by client\r\n");
+					printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+					bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+					if (bytes < 0) break;
+				}
+				if(strncmp(receive_buffer,"PORT",4)==0){
+					s_data_act = socket(AF_INET, SOCK_STREAM, 0);
+					//local variables
+					int act_port[2];
+					int act_ip[4], port_dec;
+					char ip_decimal[40];
+					printf("===================================================\n");
+					printf("\n\tActive FTP mode, the client is listening... \n");
+					active=1;
+					int scannedItems = sscanf(receive_buffer, "PORT %d,%d,%d,%d,%d,%d", &act_ip[0],&act_ip[1],&act_ip[2],&act_ip[3], &act_port[0],&act_port[1]);
+					if(scannedItems < 6){
+					sprintf(send_buffer,"501 Syntax error in arguments \r\n");
+						printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+						bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+					break;
+				}
+					local_data_addr_act.sin_family=AF_INET;//local_data_addr_act  //ipv4 only 
+					sprintf(ip_decimal, "%d.%d.%d.%d", act_ip[0], act_ip[1], act_ip[2],act_ip[3]);
+					printf("\tCLIENT's IP is %s\n",ip_decimal);  //IPv4 format
+					local_data_addr_act.sin_addr.s_addr=inet_addr(ip_decimal);  //ipv4 only
+					port_dec=act_port[0];
+					port_dec=port_dec << 8;
+					port_dec=port_dec+act_port[1];
+					printf("\tCLIENT's Port is %d\n",port_dec);
+					printf("===================================================\n");
+					local_data_addr_act.sin_port=htons(port_dec); //ipv4 only
+					if(connect(s_data_act, (struct sockaddr *)&local_data_addr_act, (int) sizeof(struct sockaddr)) != 0){
+					printf("trying connection in %s %d\n",inet_ntoa(local_data_addr_act.sin_addr),ntohs(local_data_addr_act.sin_port));
+						sprintf(send_buffer, "425 Something is wrong, can't start active connection... \r\n");
+						bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+						printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+						closesocket(s_data_act);
+					}else{
+						sprintf(send_buffer, "200 PORT Command successful\r\n");
+						bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+						printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+						printf("Connected to client\n");
+					}
+				}
+				if((strncmp(receive_buffer,"LIST",4)==0) || (strncmp(receive_buffer,"NLST",4)==0)){
+					system("dir > tmp.txt");
+					FILE *fin=fopen("tmp.txt","r");
+					sprintf(send_buffer,"150 Opening ASCII mode data connection... \r\n");
+					printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+					bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+					char temp_buffer[80];
+					while(!feof(fin)){
+						fgets(temp_buffer,78,fin);
+						sprintf(send_buffer,"%s",temp_buffer);
+						if (active==0) send(ns_data, send_buffer, strlen(send_buffer), 0);
+						else send(s_data_act, send_buffer, strlen(send_buffer), 0);
+					}
+					fclose(fin);
+					sprintf(send_buffer,"226 File transfer complete. \r\n");
+					printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+					bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+					if(active==0 )closesocket(ns_data);
+					else closesocket(s_data_act);
+					system("del tmp.txt");
+				}
+                if(strncmp(receive_buffer,"EPRT",4)==0){
+                    // needs implemention
+                }
+                if(strncmp(receive_buffer,"TYPE",4)==0){
+                    // needs implemention
+                }
+                if(strncmp(receive_buffer,"RETR",4)==0){
+                    // needs implemention
+                }
             }
         }
         // Close socket
