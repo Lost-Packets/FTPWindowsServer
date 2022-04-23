@@ -18,8 +18,9 @@
 #include <cstdio>
 #include <vector>
 #include <string>
+#include <fstream>
 #include <filesystem>
-#include <list>
+#include <dirent.h> // easier directory access lib
 
 // Socket Libs
 #include <winsock2.h> // basic socket functions
@@ -28,8 +29,7 @@ using namespace std;
 WSADATA wsadata; // WSADATA object
 
 // Socket Connection Funtion
-SOCKET SocketConnect(char *ServerIP, char *PortNum, int SocketType)
-{
+SOCKET SocketConnect(char *ServerIP, char *PortNum, int SocketType){
     SOCKET DataSocket;
     addrinfo *Hints;
     if (getaddrinfo(ServerIP, PortNum, NULL, &Hints) != 0){
@@ -48,6 +48,22 @@ SOCKET SocketConnect(char *ServerIP, char *PortNum, int SocketType)
     return DataSocket;
 }
 
+// Check if file in directory
+bool file_in_dir(char *filename){
+    DIR *directory;
+    struct dirent *en;
+    directory = opendir("./");
+    if(directory){
+        while((en = readdir(directory)) != NULL){
+            if(strcmp(en->d_name, filename) == 0){
+                return true;
+            }
+        }
+        closedir(directory);
+    }
+    return false;
+}
+
 int main(int argc, char *argv[]){
     struct sockaddr_storage clientAddress; // IPV6 Sturct
     SOCKET s, ns;
@@ -56,6 +72,7 @@ int main(int argc, char *argv[]){
     char send_buffer[80], receive_buffer[80];
     int n, bytes, addrlen, err, active = 0;
     bool IPV6_active = true;
+    bool binOrAsc; // Binary = true Ascii = false
 
     
     //char const *userName = "napoleon";
@@ -308,20 +325,43 @@ int main(int argc, char *argv[]){
                 
             }
             if(strncmp(receive_buffer,"TYPE",4)==0){
-                // needs implemention
-                sprintf(send_buffer,"200 (Command OK) \r\n");
-                printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
-                bytes = send(ns, send_buffer, strlen(send_buffer), 0);
-                if (bytes < 0) break;
+                // Split the Type Command
+                char dataType[10];
+                int scanned_items = sscanf(receive_buffer, "TYPE %s", dataType);
+                if(strcmp(dataType, "A") == 0){
+                    binOrAsc = false;
+                    sprintf(send_buffer, "200 TYPE Command successful (ASCII MODE)\r\n");
+                    bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+                    printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+                }else if(strcmp(dataType, "I") == 0){
+                    binOrAsc = true;
+                    sprintf(send_buffer, "200 TYPE Command successful (Binary MODE)\r\n");
+                    bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+                    printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+                }else{
+                    sprintf(send_buffer, "421 Unsupported DataType\r\n");
+                    bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+                    printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+                }
             }
             if(strncmp(receive_buffer,"RETR",4)==0){
-                // needs implemention
-                sprintf(send_buffer,"226 (positive completion) \r\n");
-                printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
-                bytes = send(ns, send_buffer, strlen(send_buffer), 0);
-                if (bytes < 0) break;
+                // Split the RETR command
+                char filename[FILENAME_MAX];
+                int scanned_items = sscanf(receive_buffer, "RETR %s", filename);
+                // debug info
+                cout << "Client requested file: " << filename << endl;
+
+                // check if file is present
+                if(file_in_dir(filename)){
+                    
+                }else{
+                    //file not found
+                    sprintf(send_buffer,"550 (file-does-not-exist) \r\n");
+                    printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+                    bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+                    if (bytes < 0) break;
+                }
             }
-            
         }
         // Close socket
         int iResult = shutdown(ns, SD_SEND);
