@@ -24,9 +24,29 @@
 // Socket Libs
 #include <winsock2.h> // basic socket functions
 #include <ws2tcpip.h> // required by getaddrinfo()
-#pragma comment(lib, "Ws2_32.lib")
 using namespace std;
 WSADATA wsadata; // WSADATA object
+
+// Socket Connection Funtion
+SOCKET SocketConnect(char *ServerIP, char *PortNum, int SocketType)
+{
+    SOCKET DataSocket;
+    addrinfo *Hints;
+    if (getaddrinfo(ServerIP, PortNum, NULL, &Hints) != 0){
+        return INVALID_SOCKET;
+    }
+    DataSocket = socket(Hints->ai_family, SocketType, 0);
+    if (DataSocket == INVALID_SOCKET){
+        freeaddrinfo(Hints);
+        return INVALID_SOCKET;
+    }
+    if (connect(DataSocket, Hints->ai_addr, (int)Hints->ai_addrlen) == SOCKET_ERROR){
+        closesocket(DataSocket);
+        freeaddrinfo(Hints);
+        return INVALID_SOCKET;
+    }
+    return DataSocket;
+}
 
 int main(int argc, char *argv[]){
     struct sockaddr_storage clientAddress; // IPV6 Sturct
@@ -37,9 +57,9 @@ int main(int argc, char *argv[]){
     int n, bytes, addrlen, err, active = 0;
     bool IPV6_active = true;
 
-    // Ignore for now
-    char const *userName = "napoleon";
-    char const *password = "342";
+    
+    //char const *userName = "napoleon";
+    //char const *password = "342";
 
     // WSSTARTUP
     err = WSAStartup(WSVERS, &wsadata);
@@ -61,7 +81,7 @@ int main(int argc, char *argv[]){
     struct addrinfo *result = NULL;
     struct addrinfo hints;
 
-    // IPV4 Struct For List Command
+    // IPV4 Struct For Port Command
     struct sockaddr_in local_data_addr_act;
 
     int iResult;
@@ -248,19 +268,60 @@ int main(int argc, char *argv[]){
                 sprintf(send_buffer,"226 File transfer complete. \r\n");
                 printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
                 bytes = send(ns, send_buffer, strlen(send_buffer), 0);
-                if(active==0 )closesocket(ns_data);
+                if(active==0)closesocket(ns_data);
                 else closesocket(s_data_act);
                 //system("del tmp.txt");
             }
             if(strncmp(receive_buffer,"EPRT",4)==0){
-                // needs implemention
+                // Splitting the EPRT command
+                int ipVersion;
+                char ipv6_str[64], rest[47], port[12];
+                int scanned_items = sscanf(receive_buffer, "EPRT |%d|%s", &ipVersion, rest);
+                char *first = strchr(rest, '|');
+                *first = 0;
+                scanned_items = sscanf(rest, "%s", ipv6_str);
+                char *portT = first + 1;
+                char *second = strchr(portT, '|');
+                *second = 0;
+                scanned_items = sscanf(portT, "%s", port);
+
+                // Debug Info
+                cout << "===================================" << endl;
+                cout << "Requested Ip Version: " << ipVersion << endl;
+                cout << "Clients Ip: " << ipv6_str << endl;
+                cout << "Clients Port: " << port << endl;
+                cout << "===================================" << endl;
+
+                // Open Data Socket
+                s_data_act = SocketConnect(ipv6_str, port, SOCK_STREAM);
+                active = 1; // active mode enabled
+
+                // Check EPRT Version
+                if(ipVersion != 2){
+                    sprintf(send_buffer,"522 (Network protocol not supported, use (2)) \r\n");
+                    printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+                    bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+                }
+                sprintf(send_buffer, "200 EPRT Command successful\r\n");
+                bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+                printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+                
             }
             if(strncmp(receive_buffer,"TYPE",4)==0){
                 // needs implemention
+                sprintf(send_buffer,"200 (Command OK) \r\n");
+                printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+                bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+                if (bytes < 0) break;
             }
             if(strncmp(receive_buffer,"RETR",4)==0){
                 // needs implemention
+                sprintf(send_buffer,"226 (positive completion) \r\n");
+                printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+                bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+                if (bytes < 0) break;
             }
+            
         }
         // Close socket
         int iResult = shutdown(ns, SD_SEND);
