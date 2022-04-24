@@ -74,7 +74,6 @@ int main(int argc, char *argv[]){
     bool IPV6_active = true;
     bool binOrAsc; // Binary = true Ascii = false
 
-    
     //char const *userName = "napoleon";
     //char const *password = "342";
 
@@ -97,9 +96,7 @@ int main(int argc, char *argv[]){
     // Socket Address Structures
     struct addrinfo *result = NULL;
     struct addrinfo hints;
-
-    // IPV4 Struct For Port Command
-    struct sockaddr_in local_data_addr_act;
+    struct sockaddr_in local_data_addr_act; // IPV4 Struct For Port Command
 
     int iResult;
     memset(&hints, 0, sizeof(addrinfo));
@@ -114,7 +111,6 @@ int main(int argc, char *argv[]){
             cout << "IPV4 Active" << endl;
         }
     }
-
     // Set IPV6 or IPV4
     if(IPV6_active == true){
         hints.ai_family = AF_INET6;
@@ -198,7 +194,7 @@ int main(int argc, char *argv[]){
             
             if(strncmp(receive_buffer,"USER",4)==0){
                 printf("Logging in... \n");
-                sprintf(send_buffer,"331 Password required (anything will do really... :-) \r\n");
+                sprintf(send_buffer,"331 Password required\r\n");
                 bytes = send(ns, send_buffer, strlen(send_buffer), 0);
                 if(bytes < 0) break;
             }
@@ -328,6 +324,7 @@ int main(int argc, char *argv[]){
                 // Split the Type Command
                 char dataType[10];
                 int scanned_items = sscanf(receive_buffer, "TYPE %s", dataType);
+                // Check data type
                 if(strcmp(dataType, "A") == 0){
                     binOrAsc = false;
                     sprintf(send_buffer, "200 TYPE Command successful (ASCII MODE)\r\n");
@@ -347,13 +344,54 @@ int main(int argc, char *argv[]){
             if(strncmp(receive_buffer,"RETR",4)==0){
                 // Split the RETR command
                 char filename[FILENAME_MAX];
+                char Binbuffer[1024];
+                char ASCbuffer[1024];
                 int scanned_items = sscanf(receive_buffer, "RETR %s", filename);
+
                 // debug info
+                cout << "===================================" << endl;
                 cout << "Client requested file: " << filename << endl;
+                cout << "===================================" << endl;
 
                 // check if file is present
                 if(file_in_dir(filename)){
-                    
+                    if(binOrAsc == true){
+                        // binary
+                        sprintf(send_buffer,"150 Opening Binary mode data connection... \r\n");
+                        printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+                        bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+                        FILE *BinFile = fopen(filename, "rb");
+                        while(!feof(BinFile)){
+                            fread(Binbuffer,sizeof(unsigned char),1024,BinFile);
+                            if (active==0) send(ns_data, send_buffer, strlen(send_buffer), 0);
+                            else send(s_data_act, Binbuffer, sizeof(Binbuffer), 0);
+                        }
+                        fclose(BinFile);
+                        sprintf(send_buffer,"226 File transfer complete. \r\n");
+                        printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+                        bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+                        if(active==0)closesocket(ns_data);
+                        else closesocket(s_data_act);
+
+                    }else{
+                        // ascii
+                        sprintf(send_buffer,"150 Opening ASCII mode data connection... \r\n");
+                        printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+                        bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+                        FILE *AscFile = fopen(filename, "r");;
+                        while(!feof(AscFile)){
+                            fgets(ASCbuffer,1024,AscFile);
+                            sprintf(send_buffer,"%s",ASCbuffer);
+                            if (active==0) send(ns_data, send_buffer, strlen(send_buffer), 0);
+                            else send(s_data_act, send_buffer, strlen(send_buffer), 0);
+                        }
+                        fclose(AscFile);
+                        sprintf(send_buffer,"226 File transfer complete. \r\n");
+                        printf("<< DEBUG INFO. >>: REPLY sent to CLIENT: %s\n", send_buffer);
+                        bytes = send(ns, send_buffer, strlen(send_buffer), 0);
+                        if(active==0)closesocket(ns_data);
+                        else closesocket(s_data_act);
+                    }
                 }else{
                     //file not found
                     sprintf(send_buffer,"550 (file-does-not-exist) \r\n");
@@ -370,7 +408,9 @@ int main(int argc, char *argv[]){
             closesocket(ns); WSACleanup(); exit(0);
         }
         closesocket(ns);
-        cout << "disconnected from CLIENT with IP address: " << clientHost << " Port: " << clientService << endl; 
+        cout << "===================================" << endl;
+        cout << "disconnected from CLIENT with IP address: " << clientHost << " Port: " << clientService << endl;
+        cout << "===================================" << endl;
     }
     closesocket(s);
     WSACleanup();
